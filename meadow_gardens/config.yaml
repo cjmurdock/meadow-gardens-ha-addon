@@ -1,0 +1,40 @@
+name: Meadow Gardens Tee Times
+version: "1.0.0"
+slug: meadow_gardens
+description: Nightly Chronogolf tee-time booking with a queue page in the sidebar
+url: https://github.com/cjmurdock/meadow-gardens-ha-addon
+arch:
+  - amd64
+startup: application
+boot: auto
+ingress: true
+ingress_port: 5001
+panel_icon: mdi:golf
+panel_title: Tee Times
+watchdog: tcp://[HOST]:5001
+map:
+  - share:ro
+options:
+  booking_live_enabled: false
+  supabase_url: ""
+  supabase_key: ""
+  chronogolf_user_id: 0
+  ntfy_server: https://ntfy.sh
+  ntfy_topic: ""
+  ntfy_token: ""
+  google_calendar_id: ""
+  google_credentials_file: ""
+  login_check_time_utc: "01:30"
+  booking_start_time_utc: "01:50"
+schema:
+  booking_live_enabled: bool
+  supabase_url: url
+  supabase_key: password
+  chronogolf_user_id: int
+  ntfy_server: url
+  ntfy_topic: str
+  ntfy_token: password?
+  google_calendar_id: str?
+  google_credentials_file: str?
+  login_check_time_utc: match(^([01]\d|2[0-3]):[0-5]\d$)
+  booking_start_time_utc: match(^([01]\d|2[0-3]):[0-5]\d$)
