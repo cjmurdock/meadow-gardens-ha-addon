@@ -7,6 +7,8 @@ mkdir -p /data/state && chmod 700 /data /data/state
 eval "$(python3 - "$OPTS" <<'PY'
 import json, shlex, sys
 o = json.load(open(sys.argv[1]))
+# Values copied from a .env file often keep their quotes or a stray space.
+o = {k: (v.strip().strip('"').strip("'").strip() if isinstance(v, str) else v) for k, v in o.items()}
 env = {
     "SUPABASE_URL": o.get("supabase_url", ""),
     "SUPABASE_KEY": o.get("supabase_key", ""),
