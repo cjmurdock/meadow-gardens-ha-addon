@@ -14,8 +14,10 @@ from book_api import (BC_TIMEZONE, COURSE_ID, JS_GET_TEETIMES, MEMBER_GUEST_ID,
                       MEMBER_TYPE_ID, pause_for_session, send_ntfy, supabase_patch)
 from session import SessionRequired, open_dashboard
 
+ADVANCE_DAYS = 10
 
-async def probe_listing(page, date_str):
+
+async def probe_listing(page, date_str, label=""):
     result = await page.evaluate(JS_GET_TEETIMES, {
         "date": date_str, "courseId": COURSE_ID, "memberTypeId": MEMBER_TYPE_ID,
         "guestTypeId": MEMBER_GUEST_ID, "maxRetries": 1, "retryMs": 0,
@@ -26,7 +28,7 @@ async def probe_listing(page, date_str):
     slots = result.get("teetimes") or []
     times = sorted(t.get("start_time", "") for t in slots if isinstance(t, dict))
     span = f"{times[0]}–{times[-1]}" if times else "none"
-    print(f"[CHECK] Tee-time listing for {date_str}: HTTP OK, {len(slots)} slots ({span}). Nothing was booked.")
+    print(f"[CHECK] Tee-time listing for {date_str}{label}: HTTP OK, {len(slots)} slots ({span}). Nothing was booked.")
 
 
 async def main(notify, probe_date):
@@ -39,6 +41,9 @@ async def main(notify, probe_date):
                 page = await open_dashboard(context)
                 print("[CHECK] Dashboard reached.")
                 await probe_listing(page, probe_date)
+                # Tonight's target date: normally empty until the 7 PM release.
+                target = (datetime.now(BC_TIMEZONE) + timedelta(days=ADVANCE_DAYS)).strftime("%Y-%m-%d")
+                await probe_listing(page, target, " (tonight's target, normally empty before 7 PM)")
             finally:
                 await browser.close()
         if notify:
