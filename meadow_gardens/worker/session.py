@@ -47,6 +47,7 @@ async def open_dashboard(context):
     except (KeyError, OSError, ValueError):
         raise SessionRequired("No current Chronogolf session; sign in manually and upload a fresh session") from None
     page = await context.new_page()
+    page.on("console", lambda m: print(f"[PAGE] {m.text}", flush=True) if m.text.startswith("[API]") else None)
     response = await page.goto("https://www.chronogolf.com/dashboard", wait_until="domcontentloaded", timeout=30000)
     await page.wait_for_timeout(3000)
     final = urlparse(page.url)
@@ -56,5 +57,8 @@ async def open_dashboard(context):
     if (not response or not response.ok or response.headers.get("cf-mitigated") == "challenge" or challenge
             or final.hostname not in {"www.chronogolf.com", "chronogolf.com"}
             or not re.match(r"^/dashboard(?:/|$)", final.path)):
-        raise SessionRequired("Chronogolf login or verification required; complete it manually before resuming")
+        why = (f"HTTP {response.status if response else 'none'}, final page {final.hostname}{final.path}, "
+               f"cf-mitigated={response.headers.get('cf-mitigated') if response else None}, challenge elements={challenge}")
+        print(f"[BLOCKED] Dashboard check: {why}", flush=True)
+        raise SessionRequired(f"Chronogolf login or verification required ({why}); complete it manually before resuming")
     return page

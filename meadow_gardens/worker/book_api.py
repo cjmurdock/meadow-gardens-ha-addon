@@ -171,14 +171,15 @@ async (args) => {
         try {
             const r = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(5000) });
             if ([401, 403, 429].includes(r.status) || r.redirected || r.headers.get('cf-mitigated') === 'challenge') {
-                return { ok: false, accessBlocked: true };
+                return { ok: false, accessBlocked: true, where: 'listing', attempt: i + 1, status: r.status,
+                         redirected: r.redirected, url: new URL(r.url).pathname, cf: r.headers.get('cf-mitigated') };
             }
             if (r.ok) {
                 const data = await r.json();
                 if (data && data.length > 0) {
                     return { ok: true, teetimes: data, attempt: i + 1 };
                 }
-                console.log('[API] Teetimes attempt ' + (i + 1) + '/' + maxRetries + ': empty array');
+                console.log('[API] Teetimes attempt ' + (i + 1) + '/' + maxRetries + ': HTTP ' + r.status + ', empty array');
             } else {
                 console.log('[API] Teetimes attempt ' + (i + 1) + '/' + maxRetries + ': HTTP ' + r.status);
             }
@@ -238,6 +239,10 @@ async (args) => {
     };
     const accessBlocked = (response) => [401, 403, 429].includes(response.status)
         || response.redirected || response.headers.get('cf-mitigated') === 'challenge';
+    const blocked = (where, response) => ({
+        accessBlocked: true, where, status: response.status, redirected: response.redirected,
+        url: new URL(response.url).pathname, cf: response.headers.get('cf-mitigated')
+    });
 
     /* ---- Step 1: Freeze slot ---- */
     const csrf1 = getCsrf();
@@ -249,7 +254,7 @@ async (args) => {
         headers: { ...baseHeaders, 'X-CSRF-Token': csrf1 },
         body: '{}'
     });
-    if (accessBlocked(freezeResp)) return {accessBlocked: true};
+    if (accessBlocked(freezeResp)) return blocked('freeze', freezeResp);
     if (!freezeResp.ok) {
         return {
             ok: false, step: 'freeze',
@@ -286,7 +291,7 @@ async (args) => {
                 teetime_id: String(teetimeId)
             })
         });
-        if (accessBlocked(optsResp)) return {accessBlocked: true};
+        if (accessBlocked(optsResp)) return blocked('options', optsResp);
         if (optsResp.ok) {
             const opts = await optsResp.json();
             /* The options endpoint returns an ARRAY; grab the first element. */
@@ -399,7 +404,7 @@ async (args) => {
         body: JSON.stringify(reservPayload)
     });
 
-    if (accessBlocked(reservResp)) return {accessBlocked: true};
+    if (accessBlocked(reservResp)) return blocked('reservation', reservResp);
     let ref = null;
 
     if (reservResp.status === 201) {
@@ -492,7 +497,9 @@ async def book_tee_time_api(date_str, time_start, time_end, player_count):
                 },
             )
             if tt_result.get("accessBlocked"):
-                raise SessionRequired("Chronogolf denied or limited access; check manually")
+                detail = describe_block(tt_result)
+                print(f"[BLOCKED] {detail}")
+                raise SessionRequired(f"Chronogolf blocked the {detail}; check manually")
             await diagnostic_screenshot(page, f"{screenshot_prefix}_03_after_teetimes.png")
 
             if not tt_result.get("ok"):
@@ -573,7 +580,9 @@ async def book_tee_time_api(date_str, time_start, time_end, player_count):
                 )
 
                 if book_result.get("accessBlocked"):
-                    raise SessionRequired("Chronogolf denied or limited access; check manually")
+                    detail = describe_block(book_result)
+                    print(f"[BLOCKED] {detail}")
+                    raise SessionRequired(f"Chronogolf blocked the {detail}; check manually")
                 if book_result.get("ok"):
                     result["success"] = True
                     result["time"]    = slot["display"]
@@ -631,6 +640,19 @@ async def book_tee_time_api(date_str, time_start, time_end, player_count):
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
+def describe_block(d):
+    parts = [f"{d.get('where', '?')} request", f"HTTP {d.get('status', '?')}"]
+    if d.get("cf"):
+        parts.append(f"cf-mitigated={d['cf']}")
+    if d.get("redirected"):
+        parts.append(f"redirected to {d.get('url')}")
+    elif d.get("url"):
+        parts.append(f"at {d['url']}")
+    if d.get("attempt"):
+        parts.append(f"attempt {d['attempt']}")
+    return ", ".join(parts)
+
 
 def pause_for_session(reason):
     now = datetime.now(timezone.utc).isoformat()

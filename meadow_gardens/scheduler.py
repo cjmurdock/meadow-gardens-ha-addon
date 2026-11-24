@@ -7,7 +7,9 @@ caught up later, and a run never starts while another is still going.
 import os
 import subprocess
 import sys
+import threading
 import time
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 WORKER_DIR = "/opt/meadow/worker"
@@ -32,17 +34,60 @@ def next_run(now, hm):
     return t if t > now else t + timedelta(days=1)
 
 
+LOG_DIR = Path(os.environ.get("BOOKING_STATE_DIR", "/data/state")) / "logs"
+KEEP_DAYS = 30
+BC = timezone(timedelta(hours=-7))
+
+
+def stamp():
+    """B.C. time to the millisecond: the 7:00:01 race needs exact timing."""
+    return datetime.now(BC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+
+def write(line):
+    """Print to the add-on log and append to a daily file in /data/state/logs."""
+    print(line, flush=True)
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(LOG_DIR / f"{datetime.now(BC):%Y-%m-%d}.log", "a") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
+def prune_logs():
+    cutoff = time.time() - KEEP_DAYS * 86400
+    for f in LOG_DIR.glob("*.log"):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+        except OSError:
+            pass
+
+
 def log(msg):
-    print(f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} UTC [scheduler] {msg}", flush=True)
+    write(f"{stamp()} [scheduler] {msg}")
 
 
 def run(name, args, timeout):
     log(f"starting {name}")
+    tag = "login" if "check_login" in args[0] else "booking"
+    start = time.monotonic()
+    proc = subprocess.Popen([sys.executable, "-u", *args], cwd=WORKER_DIR, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+    timer = threading.Timer(timeout, proc.kill)
+    timer.start()
     try:
-        r = subprocess.run([sys.executable, *args], cwd=WORKER_DIR, timeout=timeout)
-        log(f"{name} finished with exit code {r.returncode}")
-    except subprocess.TimeoutExpired:
+        for line in proc.stdout:
+            write(f"{stamp()} [{tag}] {line.rstrip()}")
+        proc.wait()
+    finally:
+        timer.cancel()
+    if time.monotonic() - start >= timeout:
         log(f"{name} stopped after {timeout // 60} min timeout")
+    else:
+        log(f"{name} finished with exit code {proc.returncode}")
+    prune_logs()
 
 
 def main():
