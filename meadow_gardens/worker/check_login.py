@@ -25,6 +25,9 @@ async def probe_listing(page, date_str, label=""):
     if result.get("accessBlocked"):
         raise SessionRequired("Chronogolf tee-time listing was blocked (401/403/429 or verification); "
                               "the dashboard loaded but the booking API refused this session")
+    if not result.get("ok"):
+        print(f"[CHECK] Tee-time listing for {date_str}{label}: no tee times returned (see [PAGE] line for the HTTP status). Nothing was booked.")
+        return
     slots = result.get("teetimes") or []
     times = sorted(t.get("start_time", "") for t in slots if isinstance(t, dict))
     span = f"{times[0]}–{times[-1]}" if times else "none"
