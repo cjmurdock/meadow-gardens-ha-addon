@@ -182,7 +182,7 @@ async (args) => {
                 console.log('[API] Teetimes attempt ' + (i + 1) + '/' + maxRetries + ': HTTP ' + r.status + ', empty array');
             } else {
                 let body = '';
-                try { body = (await r.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (e) {}
+                try { body = (await r.text()).replace(/\\s+/g, ' ').slice(0, 300); } catch (e) {}
                 console.log('[API] Teetimes attempt ' + (i + 1) + '/' + maxRetries + ': HTTP ' + r.status + (body ? ' — ' + body : ''));
             }
         } catch (e) {
